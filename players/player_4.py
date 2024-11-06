@@ -113,7 +113,12 @@ class Player:
 		n = len(polygons)
 		m = len(requests)
 
+		print("Number of Polygons: ", n)
+		print("Number of Requests: ", m)
+
 		cost_matrix = np.full((n, m), np.inf)  # Initialize with infinity
+
+		print("Cost Matrix Initialized: ", cost_matrix)
 
 		for i in range(n):
 			for j in range(m):
@@ -126,7 +131,7 @@ class Player:
 					cost_matrix[i][j] = (difference / requests[j]) * 100 # Penalty
 
 
-
+		print("Cost Matrix: ", cost_matrix)
 		return cost_matrix
 
 	def hungarian_algorithm(self, polygons, requests):
