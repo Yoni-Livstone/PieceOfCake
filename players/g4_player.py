@@ -20,6 +20,7 @@ class Player:
         logger: logging.Logger,
         precomp_dir: str,
         tolerance: int,
+        num_cuts: int,
     ) -> None:
         """Initialise the player with the basic information
 
@@ -36,6 +37,7 @@ class Player:
         self.tolerance = tolerance
         self.cake_len = None
         self.cuts = None
+        self.num_cuts = num_cuts
 
     def move(self, current_percept) -> (int, List[int]):
         """Function which retrieves the current state of the cake
@@ -57,7 +59,7 @@ class Player:
             cake_len = current_percept.cake_len
             cake_width = current_percept.cake_width
 
-            num_cuts = len(requests)
+            num_cuts = self.num_cuts
             num_restarts = 10
             stagnant_limit = 20
             min_loss = float("inf")

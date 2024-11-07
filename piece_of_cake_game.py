@@ -15,16 +15,6 @@ from piece_of_cake_state import PieceOfCakeState
 from constants import *
 import constants
 from utils import *
-from players.default_player import Player as DefaultPlayer
-from players.G2_Player import G2_Player
-from players.g6_player import Player as G6_Player
-from players.g1_player import Player as G1_Player
-from players.g8_player import G8_Player
-from players.group10_player import Player as G10_Player
-from players.player_7 import Player as G7_Player
-from players.g9_player import Player as G9_Player
-from players.g5_player import Player as G5_Player
-from players.group_3 import Player as G3_Player
 from players.g4_player import Player as G4_Player
 from shapely.geometry import Polygon, LineString, Point
 from shapely.ops import split
@@ -110,10 +100,10 @@ class PieceOfCakeGame:
         self.timeout_warning_count = 0
         self.max_turns = 1e9
 
-        self.add_player(args.player)
+        self.add_player(args.player, num_cuts=args.num_cuts)
         self.initialize(args.requests)
 
-    def add_player(self, player_in):
+    def add_player(self, player_in, num_cuts=1):
         if player_in in constants.possible_players:
             if player_in.lower() == 'd':
                 player_class = DefaultPlayer
@@ -132,7 +122,7 @@ class PieceOfCakeGame:
             try:
                 start_time = time.time()
                 player = player_class(rng=self.rng, logger=self.get_player_logger(player_name),
-                                      precomp_dir=precomp_dir, tolerance=self.tolerance)
+                                      precomp_dir=precomp_dir, tolerance=self.tolerance, num_cuts=num_cuts)
             except TimeoutException:
                 is_timeout = True
                 player = None
