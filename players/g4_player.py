@@ -58,15 +58,19 @@ class Player:
             cake_width = current_percept.cake_width
 
             num_cuts = len(requests)
-            num_restarts = 30
+            num_restarts = 10
             stagnant_limit = 20
             min_loss = float("inf")
             # num_steps = 100
+
+            all_losses = []
 
             for restart in range(num_restarts):
                 cuts = generate_random_cuts(num_cuts, (cake_width, cake_len))
                 loss = self.get_loss_from_cuts(cuts, current_percept)
                 print(f"Restart {restart} Loss: {loss}")
+
+                losses = [loss]
 
                 stagnant_steps = 0
                 prev_loss = loss
@@ -106,14 +110,25 @@ class Player:
                         stagnant_steps = 0
                     prev_loss = loss
 
-                    print(f"Step: {step}, Loss: {loss}")
+                    losses.append(loss)
+                    # print(f"Step: {step}, Loss: {loss}")
                     step += 1
-
+                all_losses.append(losses)
             print(f"Best penalty: {min_loss * 100}")
+
+            try:
+                np.save(
+                    f"loss_{num_cuts}_{len(requests)}.npy",
+                    np.array(all_losses, dtype=object),
+                    allow_pickle=True,
+                )
+            except Exception as e:
+                print(e)
 
             self.cuts = [[round(cut[0], 2), round(cut[1], 2)] for cut in best_cuts]
             return constants.INIT, self.cuts[0]
-        elif turn_number <= len(self.cuts):
+
+        elif self.cuts is not None and turn_number <= len(self.cuts):
             return constants.CUT, self.cuts[turn_number - 1]
 
         return constants.ASSIGN, optimal_assignment(
