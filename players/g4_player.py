@@ -11,6 +11,147 @@ from shapely.geometry import Polygon, LineString
 from shapely.ops import split
 import copy
 from tqdm import tqdm
+import time
+import miniball
+
+
+SAVE_DATA = True
+
+
+class grid_cut_strategy:
+    def __init__(self, width, height, requests, num_cuts):
+        self.width = width
+        self.height = height
+        self.requests = requests
+        self.factors = self.factor_pairs(len(requests))
+        self.num_cuts = num_cuts
+
+    def factor_pairs(self, x):
+        min_pairs = 5
+
+        def get_factor_pairs(n):
+            pairs = []
+            limit = int(abs(n) ** 0.5) + 1
+            for i in range(1, limit):
+                if n % i == 0 and i != 1:
+                    pairs.append((i, n // i))
+            return pairs
+
+        pairs = get_factor_pairs(x)
+
+        offset = 1
+        while len(pairs) < min_pairs:
+            higher_pairs = get_factor_pairs(x + offset)
+            for pair in higher_pairs:
+                if (1 not in pair) and (pair not in pairs):
+                    pairs.append(pair)
+            offset += 1
+
+        return pairs
+
+    def calculate_piece_areas(self, x_cuts, y_cuts):
+        x_coords = np.sort(np.concatenate(([0], x_cuts, [self.width])))
+        y_coords = np.sort(np.concatenate(([0], y_cuts, [self.height])))
+
+        piece_widths = np.diff(x_coords)
+        piece_heights = np.diff(y_coords)
+
+        areas = np.concatenate(np.outer(piece_widths, piece_heights))
+
+        return areas
+
+    def loss_function(self, areas, requests):
+        R = requests
+        V = areas
+
+        num_requests = len(R)
+        num_values = len(V)
+
+        cost_matrix = np.zeros((num_requests, num_values))
+
+        for i, r in enumerate(R):
+            for j, v in enumerate(V):
+                cost_matrix[i][j] = abs(r - v) / r
+
+        row_indices, col_indices = linear_sum_assignment(cost_matrix)
+
+        total_cost = sum(
+            cost_matrix[row_indices[i], col_indices[i]] for i in range(len(row_indices))
+        )
+
+        return total_cost
+
+    def calculate_gradient(self, x_cuts, y_cuts, curr_loss, epsilon=1e-3):
+        grad_x_cuts = np.zeros_like(x_cuts, dtype=float)
+        grad_y_cuts = np.zeros_like(y_cuts, dtype=float)
+
+        for i in range(len(x_cuts)):
+            x_cuts_eps = x_cuts.copy()
+            x_cuts_eps[i] += epsilon
+            areas_eps = self.calculate_piece_areas(x_cuts_eps, y_cuts)
+            loss_eps = self.loss_function(areas_eps, self.requests)
+            grad_x_cuts[i] = (loss_eps - curr_loss) / epsilon
+
+        for i in range(len(y_cuts)):
+            y_cuts_eps = y_cuts.copy()
+            y_cuts_eps[i] += epsilon
+            areas_eps = self.calculate_piece_areas(x_cuts, y_cuts_eps)
+            loss_eps = self.loss_function(areas_eps, self.requests)
+            grad_y_cuts[i] = (loss_eps - curr_loss) / epsilon
+
+        return grad_x_cuts, grad_y_cuts
+
+    def gradient_descent(
+        self,
+        learning_rate=1,
+        num_iterations=500,
+        epsilon=1e-3,
+        learning_rate_decay=0.99,
+    ):
+        best_loss = float("inf")
+        best_x_cuts = None
+        best_y_cuts = None
+        all_losses = []
+
+        for factor in self.factors:
+            # print(f"Factor pair: {factor}")
+            num_horizontal, num_vertical = factor
+
+            x_cuts = np.array(
+                np.random.randint(1, self.width, num_vertical), dtype=float
+            )
+            y_cuts = np.array(
+                np.random.randint(1, self.height, num_horizontal), dtype=float
+            )
+
+            best_x_cuts = x_cuts.copy()
+            best_y_cuts = y_cuts.copy()
+
+            losses = []
+            lr = learning_rate
+            for i in range(num_iterations):
+                lr = max(lr * learning_rate_decay, 1e-2)
+
+                areas = self.calculate_piece_areas(x_cuts, y_cuts)
+                loss = self.loss_function(areas, self.requests)
+                losses.append(loss)
+
+                if loss < best_loss:
+                    best_loss = loss
+                    best_x_cuts = x_cuts.copy()
+                    best_y_cuts = y_cuts.copy()
+
+                grad_x_cuts, grad_y_cuts = self.calculate_gradient(
+                    x_cuts, y_cuts, loss, epsilon
+                )
+
+                x_cuts -= lr * grad_x_cuts
+                y_cuts -= lr * grad_y_cuts
+                # print(f'Iteration {i + 1}: Loss = {loss}, Best loss = {best_loss}')
+            all_losses.append(losses)
+        all_losses = np.array(all_losses)
+
+        return best_x_cuts, best_y_cuts, all_losses
 
 
 class Player:
@@ -20,7 +161,6 @@ class Player:
         logger: logging.Logger,
         precomp_dir: str,
         tolerance: int,
-        num_cuts: int,
     ) -> None:
         """Initialise the player with the basic information
 
@@ -37,7 +177,6 @@ class Player:
         self.tolerance = tolerance
         self.cake_len = None
         self.cuts = None
-        self.num_cuts = num_cuts
 
     def move(self, current_percept) -> (int, List[int]):
         """Function which retrieves the current state of the cake
@@ -51,94 +190,208 @@ class Player:
                 constants.CUT - If wants to cut the cake
                 constants.ASSIGN - If wants to assign the pieces
         """
+        start_time = time.time()
+
         turn_number = current_percept.turn_number
         requests = current_percept.requests
         polygons = current_percept.polygons
+        cur_pos = current_percept.cur_pos
+        num_requests = len(requests)
+        cake_len = current_percept.cake_len
+        cake_width = current_percept.cake_width
+        cake_area = cake_len * cake_width
 
         if turn_number == 1:
-            cake_len = current_percept.cake_len
-            cake_width = current_percept.cake_width
 
-            num_cuts = self.num_cuts
-            num_restarts = 10
-            stagnant_limit = 20
-            min_loss = float("inf")
-            best_cuts = None
-            # num_steps = 100
-
-            all_losses = []
-
-            for restart in range(num_restarts):
-                cuts = generate_random_cuts(num_cuts, (cake_width, cake_len))
-                loss = self.get_loss_from_cuts(cuts, current_percept)
-                print(f"Restart {restart} Loss: {loss}")
-
-                losses = [loss]
-
-                stagnant_steps = 0
-                prev_loss = loss
-
-                if loss < min_loss:
-                    best_cuts = copy.deepcopy(cuts)
-                    min_loss = loss
-
-                cuts = best_cuts
-
-                # Gradient descent
-                learning_rate = 0.1
-
-                step = 0
-                # while step < num_steps:
-                while loss > 0.01 and stagnant_steps < stagnant_limit:
-                    gradients = self.get_gradient(loss, cuts, current_percept)
-
-                    cur_x, cur_y = cuts[0]
-                    for j in range(len(cuts)):
-                        cuts[j] = get_shifted_cut(
-                            cuts[j],
-                            -learning_rate * gradients[j],
-                            (cake_width, cake_len),
-                            (cur_x, cur_y),
-                        )
-                        cur_x, cur_y = cuts[j]
-                    loss = self.get_loss_from_cuts(cuts, current_percept)
-                    if loss < min_loss:
-                        best_cuts = copy.deepcopy(cuts)
-                        min_loss = loss
-
-                    # Check for stagnation
-                    if prev_loss - loss < 0.01:
-                        stagnant_steps += 1
-                    else:
-                        stagnant_steps = 0
-                    prev_loss = loss
-
-                    losses.append(loss)
-                    # print(f"Step: {step}, Loss: {loss}")
-                    step += 1
-                all_losses.append(losses)
-            print(f"Best penalty: {min_loss * 100}")
+            strategies = []
+            zig_zag_loss = float("inf")
 
             try:
-                np.save(
-                    f"loss_{num_cuts}_{len(requests)}.npy",
-                    np.array(all_losses, dtype=object),
-                    allow_pickle=True,
-                )
+                if cake_len < 24:
+                    zig_zag_cuts = self.zig_zag(current_percept, requests)
+                    zig_zag_loss = self.get_loss_from_cuts(
+                        zig_zag_cuts,
+                        current_percept,
+                        plate=True,
+                        tolerance=self.tolerance,
+                    )
+                    strategies.append((zig_zag_cuts, zig_zag_loss))
+                    print(f"Zig zag loss: {zig_zag_loss}")
             except Exception as e:
                 print(e)
 
-            self.cuts = [[round(cut[0], 2), round(cut[1], 2)] for cut in best_cuts]
-            return constants.INIT, self.cuts[0]
+            if zig_zag_loss > 0:
+                try:
+                    grid_cut = grid_cut_strategy(cake_width, cake_len, requests)
+                    best_x_cuts, best_y_cuts, grid_cut_losses = (
+                        grid_cut.gradient_descent()
+                    )
+                    grid_loss = grid_cut_losses.min()
+                    strategies.append(([], grid_loss))
+                    print(f"Grid cut loss: {grid_loss}")
+                except Exception as e:
+                    print(e)
 
-        elif self.cuts is not None and turn_number <= len(self.cuts):
+                try:
+                    gd_cuts = self.gradient_descent(
+                        requests, start_time, current_percept
+                    )
+                    gd_loss = self.get_loss_from_cuts(
+                        gd_cuts,
+                        current_percept,
+                        plate=True,
+                        tolerance=self.tolerance,
+                    )
+                    strategies.append((gd_cuts, gd_loss))
+                    print(f"Gradient descent loss: {gd_loss}")
+                except Exception as e:
+                    print(e)
+
+            if grid_loss == gd_loss:
+                self.cuts = [[round(cut[0], 2), round(cut[1], 2)] for cut in gd_cuts]
+            else:
+                best_loss = float("inf")
+                best_cuts = []
+                for cuts, loss in strategies:
+                    if loss < best_loss and len(cuts) > 0:
+                        best_loss = loss
+                        best_cuts = cuts
+                self.cuts = [[round(cut[0], 2), round(cut[1], 2)] for cut in best_cuts]
+                return constants.INIT, self.cuts[0]
+
+        elif turn_number <= len(self.cuts):
             return constants.CUT, self.cuts[turn_number - 1]
 
         return constants.ASSIGN, optimal_assignment(
             requests, [polygon.area for polygon in polygons]
         )
 
-    def get_loss_from_cuts(self, cuts, current_percept):
+    def zig_zag(self, current_percept, requests):
+        cake_len = current_percept.cake_len
+        cake_width = current_percept.cake_width
+        cake_area = cake_len * cake_width
+
+        num_restarts = 30
+
+        min_loss = float("inf")
+        best_cuts = []
+
+        for restart in range(num_restarts):
+            try:
+                cuts = [[0, 0]]
+                scrambled_requests = np.random.permutation(requests)
+                for request in scrambled_requests:
+                    # Calculate the base length needed for the current polygon area
+                    base_length = round(2 * request / cake_len, 2)
+                    knife_x = (
+                        round(cuts[-2][0] + base_length, 2)
+                        if len(cuts) > 2
+                        else base_length
+                    )
+                    knife_y = cake_len if cuts[-1][1] == 0 else 0
+
+                    # Adjust if the knife position goes beyond the cake width
+                    if knife_x > cake_width:
+                        adjustment = round(
+                            2 * cake_area * 0.05 / (cake_width - cuts[-2][0]), 2
+                        )
+                        knife_x = cake_width
+                        knife_y = (
+                            cake_len - adjustment if cuts[-1][1] != 0 else adjustment
+                        )
+                    cuts.append([knife_x, knife_y])
+                loss = self.get_loss_from_cuts(cuts, current_percept, plate=True)
+
+                if loss < min_loss:
+                    min_loss = loss
+                    best_cuts = copy.deepcopy(cuts)
+            except:
+                pass
+
+        return best_cuts
+
+    def gradient_descent(self, requests, start_time, current_percept):
+        cake_len = current_percept.cake_len
+        cake_width = current_percept.cake_width
+
+        if len(requests) > 50:
+            num_cuts = len(requests) // 3
+        elif len(requests) > 20:
+            num_cuts = len(requests) // 2
+        else:
+            num_cuts = len(requests)
+
+        num_restarts = 30
+        stagnant_limit = 20
+        min_loss = float("inf")
+        best_cuts = None
+
+        all_losses = []
+
+        while True:
+
+            # Time check
+            if current_percept.time_remaining - time.time() + start_time < 60:
+                break
+
+            cuts = generate_random_cuts(self.num_cuts, (cake_width, cake_len))
+            loss = self.get_loss_from_cuts(cuts, current_percept)
+            losses = [loss]
+
+            stagnant_steps = 0
+            prev_loss = loss
+
+            if loss < min_loss:
+                best_cuts = copy.deepcopy(cuts)
+                min_loss = loss
+
+            # Gradient descent
+            learning_rate = 1
+
+            step = 0
+            # while step < num_steps:
+            while loss > 0.01 and stagnant_steps < stagnant_limit:
+                learning_rate = max(0.1, learning_rate * 0.995)
+                gradients = self.get_gradient(loss, cuts, current_percept)
+
+                cur_x, cur_y = cuts[0]
+                for j in range(len(cuts)):
+                    cuts[j] = get_shifted_cut(
+                        cuts[j],
+                        -learning_rate * gradients[j],
+                        (cake_width, cake_len),
+                        (cur_x, cur_y),
+                    )
+                    cur_x, cur_y = cuts[j]
+                loss = self.get_loss_from_cuts(cuts, current_percept)
+                losses.append(loss)
+                if loss < min_loss:
+                    best_cuts = copy.deepcopy(cuts)
+                    min_loss = loss
+
+                # Check for stagnation
+                if prev_loss - loss < 0.01:
+                    stagnant_steps += 1
+                else:
+                    stagnant_steps = 0
+                prev_loss = loss
+
+                # Time check
+                if current_percept.time_remaining - time.time() + start_time < 60:
+                    break
+
+                step += 1
+            all_losses.append(losses)
+
+        if SAVE_DATA:
+            try:
+                np.save(f"loss_{self.num_cuts}_{len(requests)}.npy", all_losses)
+            except:
+                pass
+
+        return best_cuts
+
+    def get_loss_from_cuts(self, cuts, current_percept, plate=True, tolerance=0):
         new_percept = copy.deepcopy(current_percept)
         new_polygons = new_percept.polygons
 
@@ -150,8 +403,7 @@ class Player:
                 new_polygons,
                 new_percept,
             )
-        loss = cost_function(new_polygons, current_percept.requests)
-
+        loss = cost_function(new_polygons, current_percept.requests, plate, tolerance)
         return loss
 
     def get_gradient(self, loss, cuts, current_percept):
@@ -264,9 +516,20 @@ def generate_random_cuts(num_cuts, cake_dims):
     return cuts
 
 
-def cost_function(polygons, requests):
+def cost_function(polygons, requests, plate, tolerance):
+    if plate:
+        V = []
+        for polygon in polygons:
+            cake_points = np.array(
+                list(zip(*polygon.exterior.coords.xy)), dtype=np.double
+            )
+            res = miniball.miniball(cake_points)
+            if res["radius"] <= 12.5:
+                V.append(polygon.area)
+    else:
+        V = [polygon.area for polygon in polygons]
+
     R = requests
-    V = [polygon.area for polygon in polygons]
 
     num_requests = len(R)
     num_values = len(V)
@@ -276,7 +539,9 @@ def cost_function(polygons, requests):
     # Fill the cost matrix with relative differences
     for i, r in enumerate(R):
         for j, v in enumerate(V):
-            cost_matrix[i][j] = abs(r - v) / r
+            penalty = abs(r - v) / r * 100
+            if penalty > tolerance:
+                cost_matrix[i][j] = abs(r - v) / r
 
     # Solving the assignment problem
     row_indices, col_indices = linear_sum_assignment(cost_matrix)
