@@ -95,11 +95,11 @@ class PieceOfCakeGame:
         self.cake_len = None
         self.cake_width = None
 
-        self.tolerance = args.tolerance
         self.requests = []
         self.cur_pos = None
         self.prev_pos = None
-        self.penalty = None
+        self.tolerances = [5, 12, 25]
+        self.penalties = None
         self.solution_length = None
         self.polygon_list = None
         self.goal_reached = False
@@ -139,7 +139,7 @@ class PieceOfCakeGame:
             try:
                 start_time = time.time()
                 player = player_class(rng=self.rng, logger=self.get_player_logger(player_name),
-                                      precomp_dir=precomp_dir, tolerance=self.tolerance)
+                                      precomp_dir=precomp_dir, tolerance=self.tolerances[0])
                 player_time_taken = time.time() - start_time
                 self.player_time -= player_time_taken
                 if self.use_timeout:
@@ -365,12 +365,13 @@ class PieceOfCakeGame:
 
         # print("Turn {} complete".format(self.turns))
 
-        if self.penalty is not None:
+        if self.penalties is not None:
             self.game_state = "over"
             # Add results to a csv file
-            print("Player name: {}\nTolerance: {}\nFile: {}\nPenalty: {}\n Total Length: {}\nTime taken: {}\n".format(self.player_name, self.tolerance, self.file, self.penalty, self.solution_length, constants.timeout - self.player_time))
-            with open(self.player_name+".csv", "a") as f:
-                f.write("{},{},{},{},{},{}\n".format(self.player_name, self.tolerance, self.file, self.penalty, self.solution_length, constants.timeout - self.player_time))
+            for i in range(len(self.tolerances)):
+                print("Player name: {}\nTolerance: {}\nFile: {}\nPenalty: {}\n Total Length: {}\nTime taken: {}\n".format(self.player_name, self.tolerances[i], self.file, self.penalties[i], self.solution_length, constants.timeout - self.player_time))
+                with open(self.player_name+".csv", "a") as f:
+                    f.write("{},{},{},{},{},{}\n".format(self.player_name, self.tolerances[i], self.file, self.penalties[i], self.solution_length, constants.timeout - self.player_time))
             self.end_time = time.time()
             print("\nTime taken: {}\n".format(self.end_time - self.start_time))
             return
@@ -386,11 +387,12 @@ class PieceOfCakeGame:
                 self.play_game()
         else:
             print("Timeout: Pieces not assigned...\n\n")
-            print("Player name: {}\nTolerance: {}\nFile: {}\nPenalty: {}\n Total Length: {}\nTime taken: {}\n".format(
-                self.player_name, self.tolerance, self.file, len(self.requests)*100, 1e8,
-                constants.timeout - self.player_time))
-            with open(self.player_name+".csv", "a") as f:
-                f.write("{},{},{},{},{},{}\n".format(self.player_name, self.tolerance, self.file, self.penalty, 0, constants.timeout - self.player_time))
+            for i in range(len(self.tolerances)):
+                print("Player name: {}\nTolerance: {}\nFile: {}\nPenalty: {}\n Total Length: {}\nTime taken: {}\n".format(
+                    self.player_name, self.tolerances[i], self.file, len(self.requests)*100, 1e8,
+                    constants.timeout - self.player_time))
+                with open(self.player_name+".csv", "a") as f:
+                    f.write("{},{},{},{},{},{}\n".format(self.player_name, self.tolerances[i], self.file, self.penalties[i], 0, constants.timeout - self.player_time))
             self.game_state = "over"
             self.end_time = time.time()
             print("\nTime taken: {}\nValid moves: {}\n".format(self.end_time - self.start_time, self.valid_moves))
@@ -497,16 +499,18 @@ class PieceOfCakeGame:
                                        self.cur_pos[0], self.cur_pos[1]))
             return True
         elif action[0] == constants.ASSIGN:
-            self.penalty = 0
+            self.penalties = np.zeros(len(self.tolerances))
             self.assignment = action[1]
             for request_index, assignment in enumerate(action[1]):
                 # check if the cake piece fit on a plate of diameter 25 and calculate penaly accordingly
                 if assignment == -1 or (not self.can_cake_fit_in_plate(self.polygon_list[assignment])):
-                    self.penalty += 100
+                    for i in range(len(self.penalties)):
+                        self.penalties[i] += 100
                 else:
                     penalty_percentage = 100 * abs(self.polygon_list[assignment].area - self.requests[request_index])/self.requests[request_index]
-                    if penalty_percentage > self.tolerance:
-                        self.penalty += penalty_percentage
+                    for i in range(len(self.tolerances)):
+                        if penalty_percentage > self.tolerances[i]:
+                            self.penalties[i] += penalty_percentage
             self.solution_length = 0
             for cut in self.cake_cuts1:
                 self.solution_length += self.euclidean_distance((cut[0], cut[1]), (cut[2], cut[3]))
@@ -619,8 +623,8 @@ class PieceOfCakeGame:
             else:
                 self.mark_area(cent, "red", polygon.area)
 
-        if self.penalty is not None:
-            self.canvas.create_text(700, 20, text="Penalty: {}".format(self.penalty), font=("Arial", 14), fill="black",
+        if self.penalties is not None:
+            self.canvas.create_text(700, 20, text="Penalty: {}".format(self.penalties), font=("Arial", 14), fill="black",
                                               activefill="gray", tags="penalty text")
             # Calculate the sum of lengths of all the cuts
             total_length = 0
