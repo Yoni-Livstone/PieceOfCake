@@ -107,6 +107,7 @@ class grid_cut_strategy:
         num_iterations=500,
         epsilon=1e-3,
         learning_rate_decay=0.99,
+        num_restarts=10,
     ):
         best_loss = float("inf")
         best_x_cuts = None
@@ -117,38 +118,39 @@ class grid_cut_strategy:
             # print(f"Factor pair: {factor}")
             num_horizontal, num_vertical = factor
 
-            x_cuts = np.array(
-                np.random.randint(1, self.width, num_vertical), dtype=float
-            )
-            y_cuts = np.array(
-                np.random.randint(1, self.height, num_horizontal), dtype=float
-            )
-
-            best_x_cuts = x_cuts.copy()
-            best_y_cuts = y_cuts.copy()
-
-            losses = []
-            lr = learning_rate
-            for i in range(num_iterations):
-                lr = max(lr * learning_rate_decay, 1e-2)
-
-                areas = self.calculate_piece_areas(x_cuts, y_cuts)
-                loss = self.loss_function(areas, self.requests)
-                losses.append(loss)
-
-                if loss < best_loss:
-                    best_loss = loss
-                    best_x_cuts = x_cuts.copy()
-                    best_y_cuts = y_cuts.copy()
-
-                grad_x_cuts, grad_y_cuts = self.calculate_gradient(
-                    x_cuts, y_cuts, loss, epsilon
+            for i in range(num_restarts):
+                x_cuts = np.array(
+                    np.random.randint(1, self.width, num_vertical), dtype=float
+                )
+                y_cuts = np.array(
+                    np.random.randint(1, self.height, num_horizontal), dtype=float
                 )
 
-                x_cuts -= lr * grad_x_cuts
-                y_cuts -= lr * grad_y_cuts
-                # print(f'Iteration {i + 1}: Loss = {loss}, Best loss = {best_loss}')
-            all_losses.append(losses)
+                best_x_cuts = x_cuts.copy()
+                best_y_cuts = y_cuts.copy()
+
+                losses = []
+                lr = learning_rate
+                for i in range(num_iterations):
+                    lr = max(lr * learning_rate_decay, 1e-2)
+
+                    areas = self.calculate_piece_areas(x_cuts, y_cuts)
+                    loss = self.loss_function(areas, self.requests)
+                    losses.append(loss)
+
+                    if loss < best_loss:
+                        best_loss = loss
+                        best_x_cuts = x_cuts.copy()
+                        best_y_cuts = y_cuts.copy()
+
+                    grad_x_cuts, grad_y_cuts = self.calculate_gradient(
+                        x_cuts, y_cuts, loss, epsilon
+                    )
+
+                    x_cuts -= lr * grad_x_cuts
+                    y_cuts -= lr * grad_y_cuts
+                    # print(f'Iteration {i + 1}: Loss = {loss}, Best loss = {best_loss}')
+                all_losses.append(losses)
         all_losses = np.array(all_losses)
 
         return best_x_cuts, best_y_cuts, all_losses
