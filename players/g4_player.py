@@ -364,7 +364,7 @@ class Player:
                 num_cuts = math.floor(np.abs(np.random.normal(len(requests), 2)))
 
             # Time check
-            if current_percept.time_remaining - time.time() + start_time < 600:
+            if current_percept.time_remaining - time.time() + start_time < 1800:
                 break
 
             cuts = generate_random_cuts(num_cuts, (cake_width, cake_len))
@@ -385,7 +385,7 @@ class Player:
             # while step < num_steps:
             while loss > 0.01 and stagnant_steps < stagnant_limit:
                 # Time check
-                if current_percept.time_remaining - time.time() + start_time < 600:
+                if current_percept.time_remaining - time.time() + start_time < 1800:
                     break
 
                 learning_rate = max(0.1, learning_rate * 0.995)
