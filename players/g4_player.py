@@ -235,8 +235,6 @@ class Player:
                             grid_cut_strat.gradient_descent()
                         )
 
-                    print(grid_cut_losses.min())
-
                     grid_cuts = []
                     grid_cuts.extend(
                         self.vertical_cut(
@@ -602,8 +600,8 @@ class Player:
 
         # if on bottom half of cake, go to bottom right corner
         if self.is_on_bottom_half(curr_pos[1], cake_len):
-            cuts.append(self.go_to_bottom_right_corner(cake_width))
-            cuts.append(self.go_to_bottom_right_corner(cake_width, False))
+            cuts.append(self.go_to_bottom_right_corner(cake_width, cake_len))
+            cuts.append(self.go_to_bottom_right_corner(cake_width, cake_len, False))
             cuts.append([cake_width, y_cuts_indices[0]])
 
         # Start the first cut at (0, y_cuts_indices[0])
