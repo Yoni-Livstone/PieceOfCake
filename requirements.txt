@@ -2,3 +2,5 @@ numpy
 scipy==1.9.3
 pandas
 tk
+matplotlib
+shapley
