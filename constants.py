@@ -9,4 +9,4 @@ INIT = 1
 CUT = 2
 ASSIGN = 3
 
-timeout = 3600
+timeout = 3600 * 2
