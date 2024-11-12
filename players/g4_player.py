@@ -281,14 +281,14 @@ class Player:
         cake_len = current_percept.cake_len
         cake_width = current_percept.cake_width
 
-        num_restarts = 30
-        stagnant_limit = 20
+        num_restarts = 15
+        stagnant_limit = 10
         min_loss = float("inf")
         best_cuts = None
 
         all_losses = []
 
-        while True:
+        for restart in range(num_restarts):
             if len(requests) > 50:
                 num_cuts = math.floor(np.abs(np.random.normal(len(requests) // 3, 5)))
             elif len(requests) > 20:
