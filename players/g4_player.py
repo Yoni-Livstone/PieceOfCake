@@ -289,6 +289,7 @@ class Player:
         all_losses = []
 
         for restart in range(num_restarts):
+            print(f"Restart {restart}")
             if len(requests) > 50:
                 num_cuts = math.floor(np.abs(np.random.normal(len(requests) // 3, 5)))
             elif len(requests) > 20:
