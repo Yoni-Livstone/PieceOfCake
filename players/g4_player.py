@@ -225,46 +225,46 @@ class Player:
                 print(e)
 
             if zig_zag_loss > 0:
-                try:
-                    grid_cut_strat = grid_cut_strategy(cake_width, cake_len, requests)
+                # try:
+                #     grid_cut_strat = grid_cut_strategy(cake_width, cake_len, requests)
 
-                    if num_requests < 50:
-                        best_x_cuts, best_y_cuts, grid_cut_losses = (
-                            grid_cut_strat.gradient_descent(num_iterations=1000)
-                        )
-                    else:
-                        best_x_cuts, best_y_cuts, grid_cut_losses = (
-                            grid_cut_strat.gradient_descent()
-                        )
+                #     if num_requests < 50:
+                #         best_x_cuts, best_y_cuts, grid_cut_losses = (
+                #             grid_cut_strat.gradient_descent(num_iterations=1000)
+                #         )
+                #     else:
+                #         best_x_cuts, best_y_cuts, grid_cut_losses = (
+                #             grid_cut_strat.gradient_descent()
+                #         )
 
-                    grid_cuts = []
-                    grid_cuts.extend(
-                        self.vertical_cut(
-                            list(best_x_cuts),
-                            cake_len,
-                            cake_width,
-                        )
-                    )
-                    grid_cuts.extend(
-                        self.horizontal_cut(
-                            list(best_y_cuts),
-                            cake_len,
-                            cake_width,
-                            grid_cuts[-1],
-                        )
-                    )
+                #     grid_cuts = []
+                #     grid_cuts.extend(
+                #         self.vertical_cut(
+                #             list(best_x_cuts),
+                #             cake_len,
+                #             cake_width,
+                #         )
+                #     )
+                #     grid_cuts.extend(
+                #         self.horizontal_cut(
+                #             list(best_y_cuts),
+                #             cake_len,
+                #             cake_width,
+                #             grid_cuts[-1],
+                #         )
+                #     )
 
-                    # Uncomment below after cuts are generated
-                    grid_loss = self.get_loss_from_cuts(
-                        grid_cuts,
-                        current_percept,
-                        plate=True,
-                        tolerance=self.tolerance,
-                    )
-                    strategies.append((grid_cuts, grid_loss))
-                    print(f"Grid cut loss: {grid_loss}")
-                except Exception as e:
-                    print(e)
+                #     # Uncomment below after cuts are generated
+                #     grid_loss = self.get_loss_from_cuts(
+                #         grid_cuts,
+                #         current_percept,
+                #         plate=True,
+                #         tolerance=self.tolerance,
+                #     )
+                #     strategies.append((grid_cuts, grid_loss))
+                #     print(f"Grid cut loss: {grid_loss}")
+                # except Exception as e:
+                #     print(e)
 
                 try:
                     gd_cuts = self.gradient_descent(
